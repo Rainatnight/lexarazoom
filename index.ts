@@ -34,6 +34,7 @@ async function run() {
 
   const context = await chromium.launchPersistentContext("./user-data", {
     headless: false,
+    ignoreHTTPSErrors: true,
   });
 
   const page = await context.newPage();
