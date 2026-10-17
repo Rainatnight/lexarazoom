@@ -1,0 +1,19 @@
+{
+  "name": "lexarazoom",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "openai": "^6.42.0",
+    "playwright": "^1.60.0",
+    "screenshot-desktop": "^1.15.4",
+    "tesseract.js": "^7.0.0"
+  }
+}
