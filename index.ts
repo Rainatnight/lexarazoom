@@ -8,6 +8,13 @@ const QUESTIONS_AMOUNT = 5;
 const URL =
   "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3499319&cmid=466405";
 
+// после кликов по вариантам
+const DELAY_AFTER_ANSWER_MS = 2_000;
+// это пауза после нажатия «Следующая страница»,
+// то есть время, которое скрипт ждёт после перехода на новый вопрос,
+// прежде чем начать его обрабатывать.
+const DELAY_AFTER_NEXT_MS = 2_000;
+
 type Mode = "single" | "multiple" | "unsupported";
 type Option = { letter: string; text: string };
 
@@ -162,7 +169,7 @@ async function run() {
       console.log(`[CLICK] ${letter}`);
     }
 
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(DELAY_AFTER_ANSWER_MS);
 
     // Кнопка "Далее"; на последней странице её нет
     const next = page.locator("input.mod_quiz-next-nav");
@@ -172,7 +179,7 @@ async function run() {
     }
     await next.click();
 
-    await page.waitForTimeout(15000);
+    await page.waitForTimeout(DELAY_AFTER_NEXT_MS);
   }
 
   console.log("\nГотово.");
