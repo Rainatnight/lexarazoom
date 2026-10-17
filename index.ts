@@ -25,17 +25,17 @@ const DELAY_AFTER_NEXT_MS = 2_000;
 
 const QUESTIONS_AMOUNT = 15;
 const URL =
-  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3499319&cmid=466405";
+  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3697922&cmid=722291";
 
 // Имя файла лога (кладётся в папку logs)
-const LOG_FILE_NAME = "test_1.txt";
+const LOG_FILE_NAME = "КОНСТ МОДУЛЬ 2 Тест 2.txt";
 const LOG_DIR = "logs";
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
 const LOG_PATH = path.join(LOG_DIR, LOG_FILE_NAME);
 
 // в файл попадут только строки, начинающиеся с этих префиксов
-const FILE_PREFIXES = ["=====", "QUESTION:", "[MODEL]", "[ANSWER]"];
+const FILE_PREFIXES = ["=====", "QUESTION:", "[MODEL]", "[ANSWER]", "OPTIONS"];
 
 for (const method of ["log", "warn", "error"] as const) {
   const original = console[method].bind(console);
@@ -54,6 +54,8 @@ type Option = { letter: string; text: string };
 const openai = new OpenAI({
   baseURL: "https://api.deepseek.com",
   apiKey: API_KEY,
+  timeout: 20_000,
+  maxRetries: 0,
 });
 
 // ---------- Определение типа вопроса ----------
@@ -89,7 +91,8 @@ async function askModel(
   const system = `Ты отвечаешь на вопросы тестов по учебным дисциплинам.
 Выбирай ответ, опираясь на общепринятые знания и стандартную терминологию.
 Верни ТОЛЬКО JSON вида {"answers": ["a"]}, без пояснений и без markdown.
-Допустимые буквы: ${letters.join(", ")}.`;
+Допустимые буквы: ${letters.join(", ")}.
+`;
 
   const rule = multiple
     ? "В этом вопросе несколько правильных ответов. Верни все подходящие буквы."
@@ -100,9 +103,12 @@ async function askModel(
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const completion = await openai.chat.completions.create({
-        model: "deepseek-v4-pro",
+        model: "deepseek-flash",
         temperature: 0,
         response_format: { type: "json_object" },
+        // отключаем рассуждение (параметр из раздела Thinking Mode)
+        // @ts-expect-error нестандартное поле DeepSeek
+        thinking: { type: "disabled" },
         messages: [
           { role: "system", content: system },
           { role: "user", content: user },
