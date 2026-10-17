@@ -15,6 +15,17 @@ const DELAY_AFTER_ANSWER_MS = 2_000;
 // прежде чем начать его обрабатывать.
 const DELAY_AFTER_NEXT_MS = 2_000;
 
+//Фиксированные паузы на вопрос: 4 секунды
+
+// 2с после кликов по вариантам
+// 2с после нажатия «Следующая страница»
+
+// Переменное время:
+
+// запрос к модели: обычно 1-5 секунд, у deepseek-v4-pro может быть дольше, если модель «думает» (иногда 10+ секунд);
+// загрузка страницы после «Далее» (waitForLoadState): около 0,5-2 секунд, зависит от сервера вуза;
+// чтение DOM, запись HTML-файла, сами клики: десятки миллисекунд.
+
 type Mode = "single" | "multiple" | "unsupported";
 type Option = { letter: string; text: string };
 
@@ -179,6 +190,7 @@ async function run() {
     }
     await next.click();
 
+    await page.waitForLoadState("load");
     await page.waitForTimeout(DELAY_AFTER_NEXT_MS);
   }
 
