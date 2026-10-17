@@ -4,14 +4,34 @@ import { chromium } from "playwright";
 import fs from "fs";
 import path from "path";
 
+const QUESTIONS_AMOUNT = 5;
+
 const openai = new OpenAI({
   baseURL: "https://api.deepseek.com",
   apiKey: API_KEY,
 });
 
+async function askModel(q: string, a: string) {
+  const completion = await openai.chat.completions.create({
+    model: "deepseek-v4-pro",
+    messages: [
+      {
+        role: "user",
+        content: `Вот вопрос:\n${q}. Вот варианты ответа${a}. content: 
+Верни только одну букву варианта ответа.
+Допустимые значения: a, b, c, d.
+Не добавляй пояснений.
+`,
+      },
+    ],
+  });
+
+  return completion.choices[0].message.content;
+}
+
 async function run() {
   let i = 0;
-  throw Error;
+
   const context = await chromium.launchPersistentContext("./user-data", {
     headless: false,
   });
@@ -31,7 +51,8 @@ async function run() {
     fs.mkdirSync(dir);
   }
 
-  while (i < 5) {
+  // Кол-во вопросов
+  while (i < QUESTIONS_AMOUNT) {
     const html = await page.content();
 
     const filePath = path.join(dir, `page_${i}.html`);
@@ -43,13 +64,11 @@ async function run() {
     const question = await page.locator(".qtext").innerText();
     console.log("QUESTION:", question);
 
-    // const answers = await page.locator('.flex-fill.ml-1').allInnerTexts();
-    // console.log("ANSWERS:", answers);
     const options = await page.evaluate(() => {
       const numbers = [...document.querySelectorAll(".answernumber")];
-      const texts = [...document.querySelectorAll(".flex-fill.ml-1")];
+      const texts = [...document.querySelectorAll(".flex-fill.ml-1")] as any;
 
-      return numbers.map((n, i) => ({
+      return numbers.map((n: any, i) => ({
         letter: n.innerText.replace(".", "").trim(),
         text: texts[i]?.innerText.trim() || "",
       }));
@@ -59,6 +78,9 @@ async function run() {
 
     const fullOption = options.map((o) => `${o.letter} ${o.text}`).join("\n");
     console.log(fullOption);
+
+    const res = await askModel(question, fullOption);
+    console.log(res);
 
     await page
       .locator(".answer > div", {
@@ -78,3 +100,6 @@ async function run() {
 }
 
 run();
+
+// stud051649
+// nU3K#rm4
