@@ -3,10 +3,7 @@ import OpenAI from "openai";
 import { chromium, type Page } from "playwright";
 import fs from "fs";
 import path from "path";
-
-const QUESTIONS_AMOUNT = 5;
-const URL =
-  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3499319&cmid=466405";
+import util from "util";
 
 // после кликов по вариантам
 const DELAY_AFTER_ANSWER_MS = 2_000;
@@ -25,6 +22,31 @@ const DELAY_AFTER_NEXT_MS = 2_000;
 // запрос к модели: обычно 1-5 секунд, у deepseek-v4-pro может быть дольше, если модель «думает» (иногда 10+ секунд);
 // загрузка страницы после «Далее» (waitForLoadState): около 0,5-2 секунд, зависит от сервера вуза;
 // чтение DOM, запись HTML-файла, сами клики: десятки миллисекунд.
+
+const QUESTIONS_AMOUNT = 15;
+const URL =
+  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3499319&cmid=466405";
+
+// Имя файла лога (кладётся в папку logs)
+const LOG_FILE_NAME = "test_1.txt";
+const LOG_DIR = "logs";
+
+if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
+const LOG_PATH = path.join(LOG_DIR, LOG_FILE_NAME);
+
+// в файл попадут только строки, начинающиеся с этих префиксов
+const FILE_PREFIXES = ["=====", "QUESTION:", "[MODEL]", "[ANSWER]"];
+
+for (const method of ["log", "warn", "error"] as const) {
+  const original = console[method].bind(console);
+  console[method] = (...args: unknown[]) => {
+    original(...args);
+    const line = util.format(...args);
+    if (FILE_PREFIXES.some((p) => line.trimStart().startsWith(p))) {
+      fs.appendFileSync(LOG_PATH, line + "\n", "utf-8");
+    }
+  };
+}
 
 type Mode = "single" | "multiple" | "unsupported";
 type Option = { letter: string; text: string };

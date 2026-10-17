@@ -2,3 +2,4 @@ user-data/
 htmls/
 apikey.ts
 node_modules/
+/logs
