@@ -1,21 +1,25 @@
 import { API_KEY } from "./apikey.ts";
 import OpenAI from "openai";
-import { chromium, type Page } from "playwright";
+import { chromium, type Locator, type Page } from "playwright";
 import fs from "fs";
 import path from "path";
 import util from "util";
 
+// Все паузы случайные: каждый раз берётся время от MIN до MAX
+
 // после кликов по вариантам
-const DELAY_AFTER_ANSWER_MS = 2_000;
+const DELAY_AFTER_ANSWER_MS = { min: 3_000, max: 7_000 };
 // это пауза после нажатия «Следующая страница»,
 // то есть время, которое скрипт ждёт после перехода на новый вопрос,
 // прежде чем начать его обрабатывать.
-const DELAY_AFTER_NEXT_MS = 2_000;
+const DELAY_AFTER_NEXT_MS = { min: 3_000, max: 7_000 };
+// пауза между вопросами, когда их несколько на одной странице
+const DELAY_BETWEEN_QUESTIONS_MS = { min: 3_000, max: 7_000 };
 
-//Фиксированные паузы на вопрос: 4 секунды
+// Паузы на вопрос (один вопрос на странице): 6-14 секунд
 
-// 2с после кликов по вариантам
-// 2с после нажатия «Следующая страница»
+// 3-7с после кликов по вариантам
+// 3-7с после нажатия «Следующая страница»
 
 // Переменное время:
 
@@ -23,12 +27,12 @@ const DELAY_AFTER_NEXT_MS = 2_000;
 // загрузка страницы после «Далее» (waitForLoadState): около 0,5-2 секунд, зависит от сервера вуза;
 // чтение DOM, запись HTML-файла, сами клики: десятки миллисекунд.
 
-const QUESTIONS_AMOUNT = 15;
+const QUESTIONS_AMOUNT = 81;
 const URL =
-  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3697922&cmid=722291";
+  "https://razoom.mgutm.ru/mod/quiz/attempt.php?attempt=3704638&cmid=423269";
 
 // Имя файла лога (кладётся в папку logs)
-const LOG_FILE_NAME = "КОНСТ МОДУЛЬ 2 Тест 2.txt";
+const LOG_FILE_NAME = "философия итог.txt";
 const LOG_DIR = "logs";
 
 if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR);
@@ -48,6 +52,12 @@ for (const method of ["log", "warn", "error"] as const) {
   };
 }
 
+async function randomDelay(page: Page, delay: { min: number; max: number }) {
+  const ms = delay.min + Math.random() * (delay.max - delay.min);
+  console.log(`[DELAY] ${(ms / 1000).toFixed(1)} с`);
+  await page.waitForTimeout(ms);
+}
+
 type Mode = "single" | "multiple" | "unsupported";
 type Option = { letter: string; text: string };
 
@@ -59,9 +69,10 @@ const openai = new OpenAI({
 });
 
 // ---------- Определение типа вопроса ----------
-async function detectMode(page: Page): Promise<Mode> {
-  const radios = await page.locator('.answer input[type="radio"]').count();
-  const checkboxes = await page
+// que — блок одного вопроса (div.que), все поиски идут внутри него
+async function detectMode(que: Locator): Promise<Mode> {
+  const radios = await que.locator('.answer input[type="radio"]').count();
+  const checkboxes = await que
     .locator('.answer input[type="checkbox"]')
     .count();
 
@@ -150,76 +161,97 @@ async function run() {
   const dir = "htmls";
   if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 
-  for (let i = 0; i < QUESTIONS_AMOUNT; i++) {
-    console.log(
-      `\n========== Вопрос ${i + 1} из ${QUESTIONS_AMOUNT} ==========`,
-    );
+  let questionNumber = 0;
 
-    const filePath = path.join(dir, `page_${i}.html`);
+  for (let pageIndex = 0; questionNumber < QUESTIONS_AMOUNT; pageIndex++) {
+    const filePath = path.join(dir, `page_${pageIndex}.html`);
     fs.writeFileSync(filePath, await page.content(), "utf-8");
     console.log("Saved:", filePath);
 
-    const question = await page.locator(".qtext").innerText();
-    console.log("QUESTION:", question);
+    // На одной странице может быть несколько вопросов — каждый в своём div.que
+    const blocks = await page.locator("div.que").all();
+    console.log(`[PAGE] Страница ${pageIndex + 1}, вопросов: ${blocks.length}`);
 
-    // Определяем тип вопроса
-    const mode = await detectMode(page);
-    if (mode === "unsupported") {
-      console.log("Останавливаюсь: ответь на этот вопрос вручную.");
-      break;
+    for (const que of blocks) {
+      questionNumber++;
+      console.log(
+        `\n========== Вопрос ${questionNumber} из ${QUESTIONS_AMOUNT} ==========`,
+      );
+
+      const question = await que.locator(".qtext").innerText();
+      console.log("QUESTION:", question);
+
+      // Определяем тип вопроса
+      const mode = await detectMode(que);
+      if (mode === "unsupported") {
+        console.log("Пропускаю: ответь на этот вопрос вручную.");
+        continue;
+      }
+      const multiple = mode === "multiple";
+
+      // Читаем варианты только внутри этого вопроса
+      // Если в тесте нумерация вариантов выключена (.answernumber пустой),
+      // буквы проставляем сами по порядку: a, b, c...
+      const options: Option[] = await que.evaluate((el) => {
+        const rows = [...el.querySelectorAll(".answer > div")];
+
+        return rows.map((row, idx) => {
+          const number = row.querySelector(
+            ".answernumber",
+          ) as HTMLElement | null;
+          const text = row.querySelector(
+            ".flex-fill.ml-1",
+          ) as HTMLElement | null;
+          const letter = number?.innerText.replace(".", "").trim() ?? "";
+          return {
+            letter: letter || String.fromCharCode(97 + idx),
+            text: text?.innerText.trim() || "",
+          };
+        });
+      });
+
+      console.log("OPTIONS:", options);
+
+      if (options.length === 0) {
+        console.log("Варианты не найдены, проверь селекторы. Пропускаю.");
+        continue;
+      }
+
+      // Спрашиваем модель
+      const letters = await askModel(question, options, multiple);
+      console.log(`[ANSWER] Режим: ${mode}, выбрано:`, letters);
+
+      // Кликаем по выбранным вариантам этого вопроса
+      const inputType = multiple
+        ? 'input[type="checkbox"]'
+        : 'input[type="radio"]';
+      // Кликаем по порядковому номеру варианта, а не по тексту буквы —
+      // так работает и когда буквы на странице не выводятся
+      for (const letter of letters) {
+        const idx = options.findIndex((o) => o.letter.toLowerCase() === letter);
+        await que.locator(".answer > div").nth(idx).locator(inputType).click();
+        console.log(`[CLICK] ${letter}`);
+      }
+
+      // Пауза между вопросами, только если их несколько на странице
+      // (после последнего не нужна — дальше идёт DELAY_AFTER_ANSWER_MS)
+      if (que !== blocks[blocks.length - 1]) {
+        await randomDelay(page, DELAY_BETWEEN_QUESTIONS_MS);
+      }
     }
-    const multiple = mode === "multiple";
 
-    // Читаем варианты
-    const options: Option[] = await page.evaluate(() => {
-      const numbers = [...document.querySelectorAll(".answernumber")];
-      const texts = [...document.querySelectorAll(".flex-fill.ml-1")];
-
-      return numbers.map((n, idx) => ({
-        letter: (n as HTMLElement).innerText.replace(".", "").trim(),
-        text: (texts[idx] as HTMLElement | undefined)?.innerText.trim() || "",
-      }));
-    });
-
-    console.log("OPTIONS:", options);
-
-    if (options.length === 0) {
-      console.log("Варианты не найдены, проверь селекторы. Останавливаюсь.");
-      break;
-    }
-
-    // Спрашиваем модель
-    const letters = await askModel(question, options, multiple);
-    console.log(`[ANSWER] Режим: ${mode}, выбрано:`, letters);
-
-    // Кликаем по выбранным вариантам
-    const inputType = multiple
-      ? 'input[type="checkbox"]'
-      : 'input[type="radio"]';
-    for (const letter of letters) {
-      await page
-        .locator(".answer > div", {
-          has: page.locator(".answernumber", {
-            hasText: new RegExp(`^\\s*${letter}\\.?\\s*$`, "i"),
-          }),
-        })
-        .locator(inputType)
-        .click();
-      console.log(`[CLICK] ${letter}`);
-    }
-
-    await page.waitForTimeout(DELAY_AFTER_ANSWER_MS);
+    await randomDelay(page, DELAY_AFTER_ANSWER_MS);
 
     // Кнопка "Далее"; на последней странице её нет
     const next = page.locator("input.mod_quiz-next-nav");
     if ((await next.count()) === 0) {
-      console.log("Кнопки 'Далее' нет — вероятно, это последний вопрос.");
+      console.log("Кнопки 'Далее' нет — вероятно, это последняя страница.");
       break;
     }
     await next.click();
 
     await page.waitForLoadState("load");
-    await page.waitForTimeout(DELAY_AFTER_NEXT_MS);
+    await randomDelay(page, DELAY_AFTER_NEXT_MS);
   }
 
   console.log("\nГотово.");
